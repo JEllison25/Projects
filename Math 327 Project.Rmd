@@ -1,0 +1,333 @@
+---
+title: "Predicting Alcohol Content in Portuguese Wine - 2009"
+author: "Jared Ellison and Cole Peters"
+date: "October 8, 2021"
+output:
+word_document:
+  toc: yes
+---
+```{r echo=F}
+# Set global figure size
+knitr::opts_chunk$set(fig.width=6, fig.height=3.5)
+```
+# Abstract
+The dataset we chose to use tells us about differing variables of a sample of wine. We will be looking at how the alcohol content of these Portuguese wine can be predicted using other data, such as density, volatile acidity, or pH level. We will make many models seeing how each of the predictor variables affects the amount of alcohol in the wine. Because of a large outlier in our dataset, our residual plots for the more simple models may not seem to show linearity. We attempt to solve this in our 4th model by removing the data point and taking out any non-significant predictors.
+ 
+ 
+# Introduction
+This dataset comes from Kaggle. It has data on 6497 types of Portuguese wines from 2009.
+- Alcohol content (%/volume)
+ 
+- Citric acid (g/L)
+ 
+- Volatile acidity (mg/L)
+ 
+- Fixed acidity (mg/L)
+ 
+- Residual sugar (g/L)
+ 
+- Density (kg/L)
+ 
+- pH level (Scale 1-14)
+ 
+- Sulfates (mg/L)
+ 
+- Free sulfur dioxide (mg/L)
+ 
+- Total sulfur dioxide (mg/L)
+ 
+- Quality (Scale 1-10)
+ 
+- Type (White:1 Red:0)
+ 
+- Chlorides (mg/L).
+ 
+ 
+Our response variable is alcohol content. We are attempting to figure out what predictors can best predict the alcohol content.
+ 
+```{r}
+wine=read.csv("winequalityN.csv")
+z=wine[complete.cases(wine), ]
+wine1=subset(z,select=c(fixed.acidity, volatile.acidity, citric.acid, residual.sugar, chlorides, free.sulfur.dioxide, total.sulfur.dioxide, density, pH, sulphates, alcohol, quality))
+```
+```{r}
+library (ggplot2)
+library (tidyr)
+ggplot(gather(wine1), aes(value)) +
+geom_histogram(bins = 12) +
+facet_wrap(~key, scales = 'free_x')
+```
+ 
+We can see that chlorides, residual sugar, and volatile acidity are right-skewed. We may
+deal with these later.
+ 
+```{r}
+plot(wine)
+```
+ 
+From our scatter plots, it is difficult to tell what variables are correlated with alcohol content. Fixed acidity and pH levels seem to be correlated with one another. Free sulfur dioxide and total sulfur dioxide are positively correlated as well.
+ 
+One variable that appears negatively correlated with alcohol is density.
+# First Order Model 1 - All Predictors
+ 
+```{r}
+fit1=lm(alcohol~ type+ fixed.acidity+ volatile.acidity+ citric.acid+ residual.sugar+ chlorides+ free.sulfur.dioxide+ total.sulfur.dioxide+ density+ pH+ sulphates+ quality, data=wine )
+summary(fit1)
+```
+ 
+This first model that uses all of the predictor variables explains 82.6% of the variation in the alcohol content of wine. The residual standard error is 0.4979 (percent alcohol content). The most significant predictor variables are density, residual sugar, fixed acidity, and pH. These are the predictors with the highest t values.
+Higher fixed acidity, volatile acidity, citric acid, residual sugar, sulphates, pH, and quality of wine are associated with higher predicted alcohol content.
+Higher chlorides, free sulfur dioxide, total sulfur dioxide, and density are associated with lower predicted alcohol content.
+Red wine is also associated with higher predicted alcohol content compared to white wine.
+ 
+Next we will look at the residual plots.
+ 
+```{r}
+plot(fit1)
+```
+ 
+1. The residuals vs fitted plot seems to show constant variance and linearity with one large outlier.
+ 
+2. The Normal Q-Q plot shows a pretty normal distribution of residuals, with some right and left skewness. Without the large outlier, we would probably see this plot in a better scale and would be able to more accurately assess the normality of the residuals.
+3. The square root of the standardized residuals vs fitted values plot also seems to show constant variance and linearity outside of our massive outlier.
+4. We have one point with very large leverage and a very large residual, leading to a very high Cook's Distance.
+We will look to take out this data point in one of our future models.
+ 
+# Box Cox Analysis
+ 
+We can use a Box Cox Analysis to determine if a transformation of alcohol, our response variable, is appropriate.
+ 
+```{r}
+MASS::boxcox(fit1)
+```
+ 
+The Box Cox Analysis tells us to transform our response variable by raising it to a power between -0.5 and -0.1. We will try raising the response variable to the -1/3 power.
+ 
+# First Order Model 2 - Transformed Response Variable
+ 
+```{r}
+fit2=lm((alcohol)^(-1/3)~ type+ fixed.acidity+ volatile.acidity+ citric.acid+ residual.sugar+ chlorides+ free.sulfur.dioxide+ total.sulfur.dioxide+ density+ pH+ sulphates+ quality, data=wine )
+summary(fit2)
+```
+ 
+We see that this model explains 82.2% of the variation of (alcohol)^(-1/3) content in wine, which is less than our first model. The residual standard error of (alcohol)^(-1/3) is .00711.
+ 
+We can now look to see if our transformation made our linearity, constant variance, and normality conditions any better.
+ 
+```{r}
+plot(fit2)
+```
+ 
+These plot look very similar to the plots of our first model, with the major outlier now having a negative residual.
+Since these plots don't look any better than the ones from our first model and our R-squared value became smaller, we will skip the transformation on our response variable for the next model.
+## Outlier Analysis
+We see that there is a data point with a standardized residual of 30 from our original first order model, which is very large and messes with the scales of our residual plots. We will investigate this outlier next.
+ 
+```{r}
+predict(fit1) [2758]
+```
+ 
+The predicted value of alcohol content in row 2782 is -3.42%, while the actual alcohol content is 11.7%. This is a major difference.
+ 
+```{r}
+plot(wine [, c("fixed.acidity", "volatile.acidity", "citric.acid", "residual.sugar", "chlorides", "free.sulfur.dioxide", "density", "pH", "sulphates", "alcohol", "quality")],
+     col=ifelse (1:6497==2782, 2, 1), cex=ifelse (1:6497==2782, 1.5, 1))
+```
+ 
+Wine number 2782 has an actual alcohol content of 11.7%, while its density of 1.039 and its residual sugar value of 65.8 are very extreme values compared to the rest of the data set. Density has a very large negative slope, which is the likely reason why the predicted alcohol content was so much smaller than the actual alcohol content.
+ 
+Seeing that this point could have a large impact on our regression model, we will try our next model without this point.
+# First Order Model 3 - Removing Insignificant Predictors
+Next, we will use stepwise regression to determine which explanatory variables should be left out of our model.
+ 
+```{r}
+fit0=lm(alcohol~ type+ fixed.acidity+ volatile.acidity+ citric.acid+ residual.sugar+ chlorides+ free.sulfur.dioxide+ total.sulfur.dioxide+ density+ pH+ sulphates+ quality, data=wine)
+stepfit=step(fit0, direction="both")
+```
+The AIC method of stepwise regression shows us that total sulfur dioxide is the only explanatory variable that should be left out of our model. The BIC method produced the same results.
+Thus, we will run our third model taking out total sulfur dioxide.
+ 
+```{r}
+#total sulfur dioxide is the only variable removed
+fit3=lm(alcohol~ type+ fixed.acidity+ volatile.acidity+ citric.acid+ residual.sugar+ chlorides + free.sulfur.dioxide+ density+ pH+ sulphates+ quality, data=wine[-c(2782),])
+summary(fit3)
+```
+Total sulfur dioxide was most likely insignificant because it was so closely correlated to free sulfur dioxide. Our R-squared value increased to 0.8526 when we took out the outlier and total sulfur dioxide.
+Next, we will create centered interaction effects on our model.
+```{r}
+w = wine[complete.cases(wine), ]
+wine2=subset(w)
+my.center = function (x) x - mean (x)
+wine2$fixed.acidity.c = my.center(wine2$fixed.acidity)
+wine2$volatile.acidity.c = my.center(wine2$volatile.acidity)
+wine2$citric.acid.c = my.center(wine2$citric.acid)
+wine2$residual.sugar.c = my.center(wine2$residual.sugar)
+wine2$chlorides.c = my.center(wine2$chlorides)
+wine2$free.sulfur.dioxide.c = my.center(wine2$free.sulfur.dioxide)
+wine2$density.c = my.center(wine2$density)
+wine2$pH.c = my.center(wine2$pH)
+wine2$sulphates.c = my.center(wine2$sulphates)
+wine2$quality.c = my.center(wine2$quality)
+```
+```{r}
+fit4=lm(alcohol ~ (type + fixed.acidity.c + volatile.acidity.c + citric.acid.c + residual.sugar.c + chlorides.c + free.sulfur.dioxide.c + density.c + pH.c + sulphates.c + quality.c)^2, data=wine2[-c(2758),])
+summary(fit4)
+```
+With all of our centered interaction effects, we have an r-squared value of 0.8763.
+We will now use BIC stepwise regression to determine which variables and interaction affects should be used in the model.
+## Final Model
+With our large amount of significant variables, the stepwise regression output takes upwards of 50 pages of space. Feel free to skip to the bottom of the output.
+```{r}
+n=dim(wine2)[1]
+stepfit2=step(fit4, direction="both", k=log(n))
+```
+Stepwise regression leaves us with many centered interaction predictors along with the original, now centered predictors we had left after our first stepwise regression analysis.
+Lets look at the summary of our model with the significant variables left.
+```{r}
+summary(stepfit2)
+```
+The adjusted r-squared value is now 0.875, meaning our model was able to explain 87.5% of the variation in alcohol content.
+ 
+We can look at the residual plots now as well.
+ 
+```{r}
+plot(stepfit2)
+```
+1. Our residuals versus fitted plot shows fairly constant variance and linearity.
+2. The normal qq plot shows some right and left skewness with what appears to be four outliers.
+3. The square root of the standardized residuals plot looks like it satisfies the linearity and constant variance conditions.
+4. The Cook's Distance plot looks good, with only one value (row 5050) reaching a 0.5 Cook's Distance. That value also appears to be the point with the highest leverage by far.
+```{r}
+boxplot(stepfit2$residuals, horizontal = T)
+```
+It appears that we have two major positive residual outliers and one major negative residual outlier from our boxplot. We also have a lot of points that are just outside of 1.5 times the interquartile range.
+```{r}
+plot(alcohol ~ stepfit2$fitted.values, data=wine2[-c(2758),])
+abline(0,1)
+```
+From the alcohol content versus fitted values plot, it appears that our model fits our data pretty well.
+ 
+We will now look at the variance inflation factors.
+ 
+```{r}
+car::vif(lm(alcohol ~ type + fixed.acidity.c + volatile.acidity.c +
+   citric.acid.c + residual.sugar.c + chlorides.c + free.sulfur.dioxide.c +
+    log(density.c) + pH.c + sulphates.c + quality.c + type:fixed.acidity.c +
+    type:volatile.acidity.c + type:free.sulfur.dioxide.c + type:density.c +
+    type:quality.c + fixed.acidity.c:volatile.acidity.c + fixed.acidity.c:density.c +
+    fixed.acidity.c:sulphates.c + fixed.acidity.c:quality.c +
+    volatile.acidity.c:citric.acid.c + volatile.acidity.c:chlorides.c +
+    volatile.acidity.c:pH.c + volatile.acidity.c:sulphates.c +
+    citric.acid.c:residual.sugar.c + citric.acid.c:free.sulfur.dioxide.c +
+    citric.acid.c:density.c + residual.sugar.c:free.sulfur.dioxide.c +
+    residual.sugar.c:pH.c + residual.sugar.c:quality.c + chlorides.c:density.c +
+    chlorides.c:sulphates.c + free.sulfur.dioxide.c:density.c +
+    free.sulfur.dioxide.c:pH.c + density.c:pH.c + density.c:quality.c,
+    data = wine2[-c(2758), ]))
+```
+
+We have one potentially high variance inflation factor from free sulfur dioxide with a VIF of 5.16. This is on the border of the limit that we discussed in class. Overall, it appears that our stepwise regression and centering of predictors has taken care of any very large variance inflation factors.
+ 
+## Leverage Analysis
+```{r}
+(lev.cut = 3 * stepfit2$rank / (stepfit2$rank + stepfit2$df.residual))
+```
+ 
+Our leverage cutoff is 0.017, meaning that any of our values that have a leverage value greater than that have unusually high leverage.
+ 
+This value seems extremely high because according to this leverage cutoff, we have a large number of points that have high leverage in our model as shown by our 4th residual plot. However, there is still only one data point with a Cook's Distance close to 0.5.
+ 
+# Interaction Plots
+ 
+The first significant interaction plot we will show is the interaction between the type of wine and the fixed acidity.
+ 
+```{r}
+library(ggplot2)
+library(tidyr)
+qplot (fixed.acidity.c, alcohol, data=wine2[-c(2758),], color=type) +
+  geom_smooth (method="lm", se = F)
+```
+For white wines from this data, as fixed acidity increases, the alcohol content decreases faster than if it were a red wine.
+ 
+Our next interaction plot is between the type of wine and the density of wine
+```{r}
+library(ggplot2)
+library(tidyr)
+qplot (density.c, alcohol, data=wine2[-c(2758),], color=type) +
+  geom_smooth (method="lm", se = F)
+```
+As density increases, we can see that alcohol content decreases at a faster rate for white wines than for red wines.
+ 
+Our third interaction plot is between fixed acidity and volatile acidity.
+```{r}
+categorize = function (x, quantiles=(1:3)/4) {
+  cutoffs = quantile (x, quantiles)
+  n.cutoffs = length (cutoffs)
+  result = rep ("C1", length (x))
+  for (j in 1:n.cutoffs) {
+    result [x > cutoffs [j]] = paste ("C", j+1, sep="")
+  }
+  return (result)
+}
+ 
+fixed.acidity.c.cat=categorize(wine2[-c(2758),]$fixed.acidity.c)
+ 
+library(ggplot2)
+library(tidyr)
+qplot (volatile.acidity.c, alcohol, data=wine2[-c(2758),], color=fixed.acidity.c.cat) +
+  geom_smooth (method="lm", se = F)
+ 
+```
+We see that wines with the lowest fixed acidity have more alcohol in them as we increase volatile acidity than wines with the highest fixed acidity.
+ 
+# Qualitative Interpretations for Predictor Variables
+ 
+From the summary of our final model, we can give qualitative interpretations of our predictor variables.
+ 
+Higher fixed acidity, chlorides, citric acid, residual sugar, sulphates, pH, and quality of wine are associated with higher predicted alcohol content.
+Higher free sulfur dioxide, volatile acidity, and density are associated with lower predicted alcohol content.
+Red wine is also associated with higher predicted alcohol content compared to white wine.
+ 
+# Conclusion
+ 
+At a first glance we can see that 82.6% of the variation in alcohol content can be determined from our model with all of the predictor variables. Our residual plots from this model seem to show non-linearity because of our large outlier, this will be the case for the rest of our residual plots until we remove it.
+After using the Box-Cox analysis, we transformed alcohol content by raising it to the (-1/3) power. This seemed to make our adjusted R-squared value worse. This model only described 82.2% of the variation in the alcohol content. Just like the first model, the residual plots seem to show non-linearity.
+ 
+Our large data point outlier had very high leverage and a high residual, leading to a Cook's Distance much greater than 1. We decided that it would be best to take that point out of our model.
+ 
+We next used stepwise regression which led us to take out our only insignificant predictor variable (total sulfur dioxide). We also created centered interaction effects that we used for our final model.
+In our last model, we were able to achieve an r-squared value of 0.875, meaning our model was able to explain 87.5% of the variation in alcohol content. Our final model ended with 11 of our original centered predictor variables and over 10 more centered interaction effects. Our residuals looked linear and constantly varied, however, they had some left and right skewness. We only had one data point with a Cook's Distance near 0.5, even though we had a lot of points with high leverage. Our interaction plots displayed the significance of a few of our interaction effects.
+ 
+Overall, our model appears to fit our data well.
+ 
+Predictions from our final model will follow.
+ 
+# Predictions
+ 
+Now we will create predictions and prediction intervals for alcohol content based on our model.
+ 
+```{r}
+wine3=wine2[-c(2758), ]
+ 
+preds = predict (stepfit2, interval = "prediction")
+ 
+wine3$pred.alcohol = (preds[,1])
+wine3$pred.lower = (preds[,2])
+wine3$pred.upper = (preds[,3])
+ 
+wine3[c(401, 789, 1654, 4999, 5000, 6001), c( "type", "density", "pH", "fixed.acidity", "alcohol",  "pred.alcohol", "pred.lower", "pred.upper")]
+```
+ 
+Of the six wines that we chose to evaluate, the alcohol content of all six were within their prediction interval from our model.
+ 
+Next we can check to see how many wines had their alcohol content within their prediction interval.
+ 
+```{r}
+wine3$in.interval = ifelse (wine3$pred.lower <= wine3$alcohol &
+                              wine3$alcohol <= wine3$pred.upper,
+                              1, 0)
+mean (wine3$in.interval)
+ 
+```
+ 
+95.23% of our wines had their alcohol content within the interval predicted by our model. This is very close to the 95% that we would expect.
