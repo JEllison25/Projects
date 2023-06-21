@@ -1,0 +1,375 @@
+---
+title: "Predicting the Probability of Heart Disease"
+author: "Cole Peters and Jared Ellison"
+output: word_document
+---
+ 
+# Abstract
+ This dataset comes from kaggle. It is about heart disease that appears in people and many variables that could cause it. The variables are:
+
+The response variable of our models is whether or not the patient has a heart disease.
+ 
+Our predictor variables are:
+- Age (28-77 years old)
+- Sex (Male or Female)
+- Chest Pain Type (Four Types: ATA, ASY, TA, NAP)
+- Resting Blood Pressure (mm Hg)
+- Cholesterol Level (mm/dl)
+- Fasting Blood Sugar (Binary variable: Is the patients blood pressure above 120 mg/dl. Yes: 1, No: 0)
+- Resting ECG (Three categories of results: Normal, Left Ventricular Hypertrophy (LVH), and ST)
+- Max Heart Rate (The maximum heart rate a patient was observed to have. Measured in beats per minute)
+- Exercise Angina (Describes if a patient has angina with exercise. Yes: 1, No: 0)
+- Old Peak ()
+- ST_Slope (3 categories that describe the ST segment of the ECG results: Down, Flat, and Up)
+
+We are hoping to be able to predict with relative certainty whether or not a person would have heart disease based on all of our predictor variables. If we are successful, we could possibly use this model to help find out who has a higher risk of having heart disease based on these variables.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+ 
+```{r}
+heart = read.csv("heart1.csv", header = TRUE)
+quantheart = subset(heart, select=c(Age, RestingBP, Cholesterol, MaxHR, Oldpeak))
+attach(heart)
+```
+ 
+# Data Characteristics
+ 
+The data set we are working with contains data on 918 patients. There was one patient whose resting blood pressure was recorded at zero, so we removed that data point and were left with 917 patients. After that, we saw that there were 171 patients without cholesterol recorded. After removing those rows we were down to 746 patients.
+ 
+We will dive into the details of these variables now.
+ 
+## Response Variable - Heart Disease
+ 
+We'll start by looking at the characteristics of our response variable.
+ 
+```{r}
+library(vcd)
+library(MASS)
+barplot (table (ifelse (HeartDisease==1, "Yes", "No")), xlab="Heart Disease",
+ylab="# Subjects", main = "Heart Disease Barplot")
+ 
+```
+ 
+The data we are now working with has a sample size of 746. Of the 746 patients, 356 have a heart disease. Since this is just a little under half of the sample size, there is no need to transform the heart disease variable.
+ 
+## Quantitative Predictor Variables
+ 
+We'll now look at the distributions for our quantitative predictor variables.
+ 
+```{r}
+library (ggplot2)
+library (tidyr)
+ggplot(gather(quantheart), aes(value)) +
+geom_histogram(bins = 12) +
+facet_wrap(~key, scales = 'free_x')
+```
+ 
+Our age, max heart rate, cholesterol and resting blood pressure variables all appear to follow a symmetric normal distribution.
+ 
+We will look further into the old peak variable.
+ 
+Looking at the old peak variable, we also see that there are a lot of values at zero. With any transformation, those zeros are always going to have the same value as each other. Thus, we will look to categorize the Oldpeak values.
+ 
+```{r}
+quantile(Oldpeak, c(.333, .667))
+ 
+c1 = 0
+c2 = 1.2
+ 
+heart$Oldpeak.cat = 1
+heart$Oldpeak.cat [heart$Oldpeak > c1] = 2
+heart$Oldpeak.cat [heart$Oldpeak > c2] = 3
+barplot(table(ifelse (heart$Oldpeak.cat==1, "Low", ifelse (heart$Oldpeak.cat==2, "Medium", "High"))), xlab="Old Peak", ylab="# Subjects", main
+= "Old Peak Barplot")
+ 
+```
+ 
+Since more than 1/3 of the Old Peak values are 0, the low category has more values than the medium category, though not by a very large amount. We will use Old Peak as a categorical variable from now on.
+ 
+ 
+## Categorical Variables
+ 
+Now we'll look at how many male and female patients we have.
+ 
+```{r}
+barplot (table (ifelse (Sex=="M", "Male", "Female")), xlab="Sex",
+ylab="# Subjects", main = "Sex Barplot")
+```
+ 
+From the histogram we can see that there are more than twice as many males as females in our data set. While this is something to keep in mind as we do our analysis, the disparity isn't large enough to remove it as a variable.
+ 
+Next we will look at the distribution of the type of chest pain a patient is exhibiting.
+ 
+```{r}
+barplot (table (ifelse (ChestPainType=="ATA", "ATA", ifelse(ChestPainType=="NAP", "NAP", ifelse(ChestPainType=="TA", "TA", "ASY")))), xlab="Type of Chest Pain",
+ylab="# Subjects", main = "Chest Pain Barplot")
+```
+We see that most of the patients don't have any chest pain. If there is any pain present in the chest, it is split almost in half between anginal pain and non-anginal pain. 
+
+Now we'll look at whether or not the patient has a greater blood sugar level than 120 mg/dl.
+ 
+```{r}
+barplot (table (ifelse (FastingBS==1, "Yes", "No")), xlab="Fasting Blood Sugar",
+ylab="# Subjects", main = "Fasting Blood Sugar Barplot")
+```
+ 
+There are around 5 to 6 times as many patients that don't have a blood sugar level greater than 120 mg/dl than the number of patients that do. This disparity is also something to keep in mind as we move forward.
+ 
+Next we will look at the ECG results for the patients. There are three categories of ECG results that were recorded.
+ 
+```{r}
+barplot (table (ifelse (RestingECG=="Normal", "Normal", ifelse(RestingECG=="ST", "ST", "Left Ventricular Hypertrophy"))), xlab="ECG Results",
+ylab="# Subjects", main = "ECG Barplot")
+```
+ 
+The normal result from an ECG seems to be the most common one, with left ventricular hypertrophy and ST following. There aren't any categories that have an alarmingly small amount of patients.
+ 
+Next we'll look at the number of patients that have angina with exercise.
+ 
+```{r}
+barplot (table (ifelse (ExerciseAngina=="Y", "Yes", "No")), xlab="Exercise Angina",
+ylab="# Subjects", main = "Exercise Agina Barplot")
+```
+ 
+There doesn't appear to be a large disparity between the number of patients who have and don't have angina that comes with exercising.
+ 
+Next we will look at the ST Slope categories. There are three categories that refer to the segment of the ECG that is normally flat. The categories are down, flat, and up, which all refer to the slope of the ST segment of the ECG.
+ 
+```{r}
+barplot (table (ifelse (ST_Slope=="Up", "Up", ifelse(ST_Slope=="Flat", "Flat", "Down"))), xlab="ST_Slope",
+ylab="# Subjects", main = "Heart Disease Barplot")
+```
+ 
+There is a much lower percentage of ST segments of ECG results that are sloped down compared to sloped up or having a flat slope. It still seems aggressive to remove this variable because of this however.
+ 
+## First Order Model
+ 
+Now we will construct a logistical regression model using all of our previously described variables.
+ 
+```{r}
+logit1 = glm(HeartDisease ~ Age + RestingBP + Cholesterol + FastingBS + MaxHR + as.factor(Oldpeak.cat) + Sex + ChestPainType + RestingECG + ExerciseAngina + ST_Slope, family = binomial, data = heart)
+summary(logit1)
+```
+ 
+Sex, Age, Chest Pain Type, Old Peak, Exercise Angina, and ST Slope are the variables that are significant in our first model (p < 0.05).
+ 
+# First-Order Model Conditions
+ 
+Next, we will examine the lowess fit versus our model's logistic fit.
+ 
+```{r}
+pred.logit1 = predict(logit1)
+plot(jitter(heart$HeartDisease, .25) ~ pred.logit1)
+fit1.ord = order (pred.logit1)
+pred.pr = predict (logit1, type='response')
+lines (pred.logit1 [fit1.ord], pred.pr [fit1.ord], lwd=2, col='blue')
+with(heart, lines(lowess(HeartDisease ~ pred.logit1), lty=2, col='red'))
+```
+ 
+It looks like there are more patients with heart disease as the predicted logit value of our model increases. Thus, it appears our model is useful in predicting heart disease. The lowess fit doesn't exactly line up with our model's logistic curve, but it isn't far off.
+ 
+Next we'll look at the residual plot for our model.
+ 
+```{r}
+plot(logit1, which=c(1))
+```
+ 
+We see that our residuals seem to be centered around 0 with no unusual pattern in them. This helps show that our model is in good shape.
+ 
+We'll check for points of high Cook's Distance in our next plot.
+ 
+```{r}
+plot(logit1, which=5)
+```
+ 
+The plot shows no points that have a Cook's Distance near 0.5, meaning there aren't any points with very high leverage and influence.
+ 
+Next we'll look at the variance inflation factors for all of our predictor variables.
+```{r}
+car::vif(logit1)
+```
+ 
+All of our variance inflation factors are well below 5 and not a cause for concern.
+ 
+# Stepwise Regression
+ 
+Next we will run an AIC stepwise regression on our first order model.
+ 
+```{r}
+n=dim(heart)[1]
+step1 = step(logit1, direction = 'both')
+summary(step1)
+```
+ 
+After running AIC stepwise regression, we will take out cholesterol, old peak, fasting blood sugar, max heart rate, and resting ECG. This left us with only 6 predictor variables.
+ 
+# Model Selection
+ 
+In our next model, we will include only the variables determined by our previous stepwise regression. We will center our quantitative variables and add interaction effects. We will use AIC stepwise regression again to remove any non-useful predictors.
+ 
+```{r}
+my.center = function (x) (x - mean (x))
+Age.c = my.center(Age)
+RestingBP.c = my.center(RestingBP)
+logit2 = glm(HeartDisease ~ (Age.c + RestingBP.c +
+    Sex + ChestPainType + ExerciseAngina + ST_Slope)^2, family = binomial,
+    data = heart)
+stepfit2 = step(logit2, direction = 'both')
+```
+ 
+ After another stepwise regression of our centered variables and all of their interaction effects, we are left with just 8 predictor variables. Those being age, resting blood pressure, sex, ChestPainType, ExerciseAngina, ST_Slope, the interaction between age and ST+Slope, and the interaction between resting blood pressure and ST_Slope. Next we will look at just how these interaction effects change our predictions.
+ 
+# Interaction Effects
+ 
+```{r}
+par (mfrow=c(1,1))
+plot (jitter (HeartDisease, 0.2) ~ Age, col=as.factor(ST_Slope), xlab="Age",
+ ylab="Heart Disease, Observed and Probability")
+ 
+fit.down = glm (HeartDisease[ST_Slope=="Down"] ~ Age[ST_Slope=="Down"],
+family=binomial)
+fit.flat = glm (HeartDisease[ST_Slope=="Flat"] ~ Age[ST_Slope=="Flat"],
+family=binomial)
+fit.up = glm (HeartDisease[ST_Slope=="Up"] ~ Age[ST_Slope=="Up"],
+family=binomial)
+# Save a list of indices for each socio status that will put the age values
+# in order from smallest to largest
+age.ord.D = order (Age [ST_Slope=="Down"])
+age.ord.F = order (Age [ST_Slope=="Flat"])
+age.ord.U = order (Age [ST_Slope=="Up"])
+# Add lines plotting the logistic fit vs age for each socio status
+lines (Age[ST_Slope=="Down"][age.ord.D], predict (fit.down,
+type='response')[age.ord.D], col=1)
+lines (Age[ST_Slope=="Flat"][age.ord.F], predict (fit.flat,
+type='response')[age.ord.F], col=2)
+lines (Age[ST_Slope=="Up"][age.ord.U], predict (fit.up,
+type='response')[age.ord.U], col=3)
+ 
+legend (27, 0.45, list("Down", "Flat", "Up"), lty=rep(1, 3), col=1:3,
+ title="ST_Slope", cex=0.8)
+```
+ 
+ We see that the probability of having heart disease for a patient whose ST Slope is down or flat rises faster for each year in age as compared to someone whose ST Slope is up. 
+ 
+```{r}
+par (mfrow=c(1,1))
+plot (jitter (HeartDisease, 0.2) ~ RestingBP, col=as.factor(ST_Slope), xlab="RestingBP",
+ ylab="Heart Disease, Observed and Probability")
+ 
+fit.down = glm (HeartDisease[ST_Slope=="Down"] ~ RestingBP[ST_Slope=="Down"],
+family=binomial)
+fit.flat = glm (HeartDisease[ST_Slope=="Flat"] ~ RestingBP[ST_Slope=="Flat"],
+family=binomial)
+fit.up = glm (HeartDisease[ST_Slope=="Up"] ~ RestingBP[ST_Slope=="Up"],
+family=binomial)
+# Save a list of indices for each socio status that will put the age values
+# in order from smallest to largest
+RestingBP.ord.D = order (RestingBP [ST_Slope=="Down"])
+RestingBP.ord.F = order (RestingBP [ST_Slope=="Flat"])
+RestingBP.ord.U = order (RestingBP [ST_Slope=="Up"])
+# Add lines plotting the logistic fit vs age for each socio status
+lines (RestingBP[ST_Slope=="Down"][RestingBP.ord.D], predict (fit.down,
+type='response')[RestingBP.ord.D], col=1)
+lines (RestingBP[ST_Slope=="Flat"][RestingBP.ord.F], predict (fit.flat,
+type='response')[RestingBP.ord.F], col=2)
+lines (RestingBP[ST_Slope=="Up"][RestingBP.ord.U], predict (fit.up,
+type='response')[RestingBP.ord.U], col=3)
+ 
+legend (180, 0.6, list("Down", "Flat", "Up"), lty=rep(1, 3), col=1:3,
+ title="ST_Slope", cex=0.8)
+```
+ 
+We see that the probability of having heart disease for a patient whose ST Slope is down or flat increases at a much greater rate than someone who has an ST Slope whose value is up.
+ 
+# Final Model
+ 
+Next we'll look at the summary statistics for our final model.
+ 
+```{r}
+summary(stepfit2)
+#
+exp(0.0435)
+#
+exp(-0.0064)
+#
+exp(1.8265)
+#
+exp(-1.8234)
+#
+exp(-1.5941)
+#
+exp(-1.5639)
+#
+exp(0.9907)
+#
+exp(0.7597)
+#
+exp(-2.1842)
+#
+exp(-.0428)
+#
+exp(.0412)
+#
+exp(.0450)
+#
+exp(.0060)
+#
+exp(confint(stepfit2))
+```
+ 
+We will now provide interpretations for our stepfit2 parameters:
+ 
+1. Holding all of the other predictors constant, for an increase in age of 1 year, the odds of having heart disease increase by 4.4%, since the odds ratio is 1.044. The 95% confidence interval of the odds ratio is between 0.9513 and 1.1650. Having 1 in the confidence interval lines up with the fact that it did not have a p-value of less than 0.05.
+ 
+2. Holding all of the other predictors constant, for an increase in resting blood pressure of 1 year, the odds of having heart disease decrease by 0.64%, since the odds ratio is 0.9936. The 95% confidence interval of the odds ratio is between 0.9556 and 1.0337. Having 1 in the confidence interval lines up with the fact that it did not have a p-value of less than 0.05.
+ 
+3. Holding all of the other predictors constant, men have 6.212 times greater odds of having a heart disease than females do. The 95% confidence interval of the odds ratio is between 3.462 and 11.464. Not having 1 in the confidence interval lines up with the fact that it did have a p-value of less than 0.05.
+ 
+4. Holding all of the other predictors constant, patients with atypical angina chest pain have 83.85% less odds of having a heart disease than those who had no chest pain. The 95% confidence interval of the odds ratio is between 0.0788 and 0.3191. Not having 1 in the confidence interval lines up with the fact that it did have a p-value of less than 0.05.
+ 
+5. Holding all of the other predictors constant, patients with non-anginal chest pain have 79.69% less odds of having a heart disease than those who had no chest pain. The 95% confidence interval of the odds ratio is between 0.1126 and 0.3601. Not having 1 in the confidence interval lines up with the fact that it did have a p-value of less than 0.05.
+ 
+6. Holding all of the other predictors constant, patients with typical angina chest pain have 79.07% less odds of having a heart disease than those who had no chest pain. The 95% confidence interval of the odds ratio is between 0.0827 and 0.5191. Not having 1 in the confidence interval lines up with the fact that it did have a p-value of less than 0.05.
+ 
+7. Holding all of the other predictors constant, patients with exercise angina have 2.69 times greater odds of having a heart disease than those without. The 95% confidence interval of the odds ratio is between 1.623 and 4.476. Not having 1 in the confidence interval lines up with the fact that it did have a p-value of less than 0.05.
+ 
+8. Holding all of the other predictors constant, patients with a flat ST ECG slope have 2.138 times greater odds of having a heart disease than those with a downward ST ECG slope do. The 95% confidence interval of the odds ratio is between 0.7819 and 5.7262. Having 1 in the confidence interval lines up with the fact that it did not have a p-value of less than 0.05.
+ 
+9. Holding all of the other predictors constant, patients with a upward ST ECG slope have 88.74% times less odds of having a heart disease than those with a downward ST ECG slope do. The 95% confidence interval of the odds ratio is between 0.0400 and 0.3072. Not having 1 in the confidence interval lines up with the fact that it did have a p-value of less than 0.05.
+ 
+Next we'll look at some predictions from our model on the probability of a patient having a heart disease.
+ 
+```{r}
+preds = predict (stepfit2, se.fit = T)
+pred.df = cbind.data.frame (heart, as.data.frame (preds))
+pred.df$lwr = pred.df$fit - 1.96 * pred.df$se.fit
+pred.df$upr = pred.df$fit + 1.96 * pred.df$se.fit
+pred.df$fit.pr = round (exp (pred.df$fit) / (1 + exp (pred.df$fit)), 3)
+pred.df$lwr.pr = round (exp (pred.df$lwr) / (1 + exp (pred.df$lwr)), 3)
+pred.df$upr.pr = round (exp (pred.df$upr) / (1 + exp (pred.df$upr)), 3)
+ 
+pred.df[c(223, 239, 276, 598, 649, 712), c(1, 2, 9, 11, 12, 19:21)]
+ 
+```
+ 
+For the three patients selected, without heart disease, their predicted probability of having heart disease was below 0.5. Their 95% confidence interval was also below 0.5. For the three patients selected with heart disease, their predicted probability of having heart disease was above 0.5. Their 95% confidence interval was also above 0.5. We will choose a cut-off later after looking at our ROC Curve, but if we were to choose a cut-off value of between 0.303 and 0.690, all 6 of these patients would have been correctly predicted in terms of having heart disease or not.
+ 
+# Model Diagnostics
+ 
+Next we'll look at the maximum likelihood ratio test.
+ 
+```{r}
+1 - pchisq(stepfit2$null.deviance - stepfit2$deviance,
+stepfit2$df.null - stepfit2$df.residual)
+```
+ 
+We see a p-value of 0. Thus, our final model shows a highly significant difference between the null deviance and the residual deviance.
+
+```{r}
+plot(stepfit2, which=c(1,5))
+```
+
+We see that our final model residuals still show the same properties as our first-order model, so we can say that this model is also a good fit. 
+Looking at the Cook's distance residual plot, none of our data points lie outside of the Cook's ditance for influence, so this is also good for our model.
